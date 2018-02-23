@@ -36,7 +36,10 @@
    (:module "libs"
             :pathname "src/libs"
             :components
-            ((:file "ahungry-manager.lib.stub")))
+            (
+             (:file "ahungry-manager.lib.stub")
+             (:file "am.lib.resolver")
+             ))
 
    ;; The main module
    (:module "ahungry-manager"
