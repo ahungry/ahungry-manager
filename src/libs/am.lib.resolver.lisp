@@ -44,16 +44,46 @@
      :description (ref "#/description" hash)
      :name (ref "#/name" hash))))
 
-
 (defun extract-tarball (pathname)
-  "Extract a tarball (.tar.gz) file to a directory (*default-pathname-defaults*)."
+  "Extract a tarball (.tar.gz) file to a directory (*default-pathname-defaults*).
+
+TODO: Put in fleece"
   (with-open-file (tarball-stream pathname
                                   :direction :input
                                   :element-type '(unsigned-byte 8))
     (archive::extract-files-from-archive
      (archive:open-archive 'archive:tar-archive
                            (chipz:make-decompressing-stream 'chipz:gzip tarball-stream)
-                                 :direction :input))))
+                           :direction :input))))
+
+(defun get-node-package-tgz-url (name version)
+  (format nil "https://registry.npmjs.org/~a/-/~a-~a.tgz"
+          name name version))
+
+(defun fetch-node-package (name version)
+  "Download NAME tarball, extract it, and rename directory.
+
+TODO: Ensure /tmp/ahungry-manager/ exists."
+  (let* ((*default-pathname-defaults* #P"/tmp/ahungry-manager/")
+         (tar-file-name (format nil "/tmp/ahungry-manager/~a-~a.tgz" name version)))
+    (trivial-download:download
+     (get-node-package-tgz-url name version)
+     tar-file-name)
+    (print tar-file-name)
+    (print name)
+    (extract-tarball tar-file-name)
+    (rename-file "/tmp/ahungry-manager/package"
+                 (merge-pathnames name "/tmp/ahungry-manager/"))))
+
+(defun get-node-package (name version)
+  "Pull in a node package (fetching if it doesn't exist).
+
+Save it in our package array as a package object."
+  (let ((package-dir (format nil "/tmp/ahungry-manager/~a/" name)))
+    (unless (directory-p package-dir)
+      (fetch-node-package name version))
+    (json-file-to-node-package
+     (format nil "/tmp/ahungry-manager/~a/package.json" name))))
 
 (defun echo (input)
   input)

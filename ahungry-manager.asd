@@ -28,7 +28,7 @@
   :description "Your project template"
   :author "Your Name <ahungry-manager@example.com>"
   :license "GPLv3"
-  :depends-on (#:ahungry-fleece)
+  :depends-on (:ahungry-fleece :chipz :drakma :archive :trivial-download)
   :serial t
   :components
   (
