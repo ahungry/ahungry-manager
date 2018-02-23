@@ -100,32 +100,34 @@ TODO: Fix the bonked casing in our json to hash stuff."
   "Pull in a node package (fetching if it doesn't exist).
 
 Save it in our package array as a package object."
-  (let* ((name (transform-name name))
+  (let* ((fetched nil)
+         (obj nil)
+         (name (transform-name name))
          (package-dir (format nil "/tmp/ahungry-manager/~a/" name))
          (version (cl-ppcre:regex-replace-all "[^0-9A-Za-z.]" version "")))
     (unless (directory-p package-dir)
-      (fetch-node-package name version))
-    (json-file-to-node-package
-     (format nil "/tmp/ahungry-manager/~a/package.json" name))))
+      (fetch-node-package name version)
+      (setf fetched t))
+    (setf obj (json-file-to-node-package
+               (format nil "/tmp/ahungry-manager/~a/package.json" name)))
+    (when fetched (get-package-dependencies obj))
+    obj))
 
 (defun get-node-package-threaded (name version)
   (bt:make-thread (lambda () (get-node-package name version)) :name name))
 
 (defmethod get-package-dependencies ((obj Node-Package))
-  (maphash #'get-node-package-threaded (node-package-dependencies obj)))
+  (when (node-package-dependencies obj)
+    (maphash #'get-node-package-threaded (node-package-dependencies obj))))
 
 (defun get-all-node-packages ()
   "Given an initial package.json file, keep iterating/pulling
   dependencies until we stop getting new fetched ones."
-  (let ((initial-count (length (find-file "/tmp/ahungry-manager" "package.json")))
-        (pass-count 0))
-    (mapcar
-     (lambda (json)
-       (print json)
-       (let ((obj (json-file-to-node-package json)))
-         (when (and obj (node-package-dependencies obj))
-           (get-package-dependencies (json-file-to-node-package json)))))
-     (find-file "/tmp/ahungry-manager" "package.json"))
-    ))
+  (mapcar
+   (lambda (json)
+     (let ((obj (json-file-to-node-package json)))
+       (when obj
+         (get-package-dependencies (json-file-to-node-package json)))))
+   (find-file "/tmp/ahungry-manager" "package.json")))
 
 ;;; "am.lib.resolver" goes here. Hacks and glory await!
