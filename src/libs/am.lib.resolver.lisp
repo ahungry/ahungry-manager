@@ -48,13 +48,16 @@
   "Extract a tarball (.tar.gz) file to a directory (*default-pathname-defaults*).
 
 TODO: Put in fleece"
-  (with-open-file (tarball-stream pathname
-                                  :direction :input
-                                  :element-type '(unsigned-byte 8))
-    (archive::extract-files-from-archive
-     (archive:open-archive 'archive:tar-archive
-                           (chipz:make-decompressing-stream 'chipz:gzip tarball-stream)
-                           :direction :input))))
+  (handler-case
+      (with-open-file (tarball-stream pathname
+                                      :direction :input
+                                      :element-type '(unsigned-byte 8))
+        (archive::extract-files-from-archive
+         (archive:open-archive 'archive:tar-archive
+                               (chipz:make-decompressing-stream 'chipz:gzip tarball-stream)
+                               :direction :input)))
+    ;; Extended tar headers can bork this.  TODO: Maybe call CLI untar.
+    (archive:unhandled-read-header-error () nil)))
 
 (defun get-node-package-tgz-url (name version)
   (format nil "https://registry.npmjs.org/~a/-/~a-~a.tgz"
@@ -64,19 +67,32 @@ TODO: Put in fleece"
   "Download NAME tarball, extract it, and rename directory.
 
 TODO: Ensure /tmp/ahungry-manager/ exists."
-  (let* ((*default-pathname-defaults* #P"/tmp/ahungry-manager/")
-         (tar-file-name (format nil "/tmp/ahungry-manager/~a-~a.tgz" name version)))
+  (let* ((*default-pathname-defaults* (pathname (format nil "/tmp/ahungry-manager/~a.tmp/" name)))
+         (tar-file-name (format nil "/tmp/ahungry-manager/~a.tmp/~a-~a.tgz" name name version)))
     (trivial-download:download
      (get-node-package-tgz-url name version)
      tar-file-name)
     (print tar-file-name)
     (print name)
-    (extract-tarball tar-file-name)
-    (rename-file "/tmp/ahungry-manager/package"
-                 (merge-pathnames name "/tmp/ahungry-manager/"))))
+    (handler-case
+        (progn
+          (extract-tarball tar-file-name)
+          (rename-file (pathname (format nil "/tmp/ahungry-manager/~a.tmp/package" name))
+                       (merge-pathnames name "/tmp/ahungry-manager/")))
+      (archive:unhandled-read-header-error ()
+        (file-put-contents
+         "/tmp/ahungry-manager/~a/package.json"
+         (format nil "{\"name\":\"~a\"}" name)))
+      (error ()
+        (file-put-contents
+         "/tmp/ahungry-manager/~a/package.json"
+         (format nil "{\"name\":\"~a\"}" name)))
+      )))
 
 (defun transform-name (name)
-  "The hashy stuff is camelCasing dashes, so undo it."
+  "The hashy stuff is camelCasing dashes, so undo it.
+
+TODO: Fix the bonked casing in our json to hash stuff."
   (string-downcase
    (cl-ppcre:regex-replace-all "([A-Z])" name "-\\1")))
 
@@ -84,18 +100,32 @@ TODO: Ensure /tmp/ahungry-manager/ exists."
   "Pull in a node package (fetching if it doesn't exist).
 
 Save it in our package array as a package object."
-  (let ((package-dir (format nil "/tmp/ahungry-manager/~a/" name))
-        (name (transform-name name))
-        (version (cl-ppcre:regex-replace-all "[^0-9A-Za-z.]" version "")))
+  (let* ((name (transform-name name))
+         (package-dir (format nil "/tmp/ahungry-manager/~a/" name))
+         (version (cl-ppcre:regex-replace-all "[^0-9A-Za-z.]" version "")))
     (unless (directory-p package-dir)
       (fetch-node-package name version))
     (json-file-to-node-package
      (format nil "/tmp/ahungry-manager/~a/package.json" name))))
 
-(defmethod get-package-dependencies ((obj Node-Package))
-  (maphash #'get-node-package (node-package-dependencies obj)))
+(defun get-node-package-threaded (name version)
+  (bt:make-thread (lambda () (get-node-package name version)) :name name))
 
-(defun echo (input)
-  input)
+(defmethod get-package-dependencies ((obj Node-Package))
+  (maphash #'get-node-package-threaded (node-package-dependencies obj)))
+
+(defun get-all-node-packages ()
+  "Given an initial package.json file, keep iterating/pulling
+  dependencies until we stop getting new fetched ones."
+  (let ((initial-count (length (find-file "/tmp/ahungry-manager" "package.json")))
+        (pass-count 0))
+    (mapcar
+     (lambda (json)
+       (print json)
+       (let ((obj (json-file-to-node-package json)))
+         (when (and obj (node-package-dependencies obj))
+           (get-package-dependencies (json-file-to-node-package json)))))
+     (find-file "/tmp/ahungry-manager" "package.json"))
+    ))
 
 ;;; "am.lib.resolver" goes here. Hacks and glory await!
