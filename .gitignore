@@ -1,0 +1,13 @@
+#.*#
+*.swp
+*.fasl
+/autom4te.cache/
+/autoscan.log
+/config.log
+/config.status
+/configure
+/Makefile
+/bin/ahungry-manager
+/bin/ahungry-manager-test
+/bin/ahungry-manager.core
+/coverage/
