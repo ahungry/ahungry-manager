@@ -75,15 +75,25 @@ TODO: Ensure /tmp/ahungry-manager/ exists."
     (rename-file "/tmp/ahungry-manager/package"
                  (merge-pathnames name "/tmp/ahungry-manager/"))))
 
+(defun transform-name (name)
+  "The hashy stuff is camelCasing dashes, so undo it."
+  (string-downcase
+   (cl-ppcre:regex-replace-all "([A-Z])" name "-\\1")))
+
 (defun get-node-package (name version)
   "Pull in a node package (fetching if it doesn't exist).
 
 Save it in our package array as a package object."
-  (let ((package-dir (format nil "/tmp/ahungry-manager/~a/" name)))
+  (let ((package-dir (format nil "/tmp/ahungry-manager/~a/" name))
+        (name (transform-name name))
+        (version (cl-ppcre:regex-replace-all "[^0-9A-Za-z.]" version "")))
     (unless (directory-p package-dir)
       (fetch-node-package name version))
     (json-file-to-node-package
      (format nil "/tmp/ahungry-manager/~a/package.json" name))))
+
+(defmethod get-package-dependencies ((obj Node-Package))
+  (maphash #'get-node-package (node-package-dependencies obj)))
 
 (defun echo (input)
   input)
